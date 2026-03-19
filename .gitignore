@@ -22,6 +22,7 @@ Thumbs.db
 # Claude
 .docker-claude/
 .claude/
+CLAUDE.md
 
 # IDE
 .vscode/
