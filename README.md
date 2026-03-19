@@ -87,6 +87,18 @@ obvyr {
 | `attachmentPaths` | `List<String>` | `[]`               | `OBVYR_ATTACHMENT_PATHS` | Additional files to include in the archive. Supports glob patterns (`*.xml`, `reports/**/*.json`). Relative paths are resolved against the project directory. Only text-based file types are included (xml, json, yaml, yml, csv, txt, html, htm, log). Env var accepts a comma-separated list of paths. |
 | `enabled`         | `Boolean`      | `true`             | —                        | Set to `false` to disable the plugin without removing it.                                                                                                                                                                                                                                                |
 
+### Recommended Configuration
+
+For most projects, no DSL block is needed at all — configure the three environment-specific values via environment variables and let everything else use its default:
+
+```bash
+export OBVYR_API_KEY="agt_your_token_here"
+export OBVYR_USER="alice"
+export OBVYR_TAGS="local"
+```
+
+Set these differently per environment (e.g. `OBVYR_TAGS=ci` and `OBVYR_USER=ci-runner` in your CI pipeline). All other settings use their defaults.
+
 ### Environment Variables
 
 All string properties fall back to their corresponding environment variable when the DSL value is not set:
