@@ -34,8 +34,8 @@ dependencies {
 }
 
 gradlePlugin {
-    website.set("https://github.com/obvyrapp/obvyr-gradle#readme")
-    vcsUrl.set("https://github.com/obvyrapp/obvyr-gradle")
+    website.set("https://github.com/obvyrcom/obvyr-gradle#readme")
+    vcsUrl.set("https://github.com/obvyrcom/obvyr-gradle")
 
     plugins {
         create("obvyrPlugin") {
