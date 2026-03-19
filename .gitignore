@@ -1,0 +1,9 @@
+# Gradle build output
+build/
+.gradle/
+
+# IntelliJ IDEA
+.idea/
+
+# Local properties
+local.properties
