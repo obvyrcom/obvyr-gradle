@@ -7,3 +7,24 @@ build/
 
 # Local properties
 local.properties
+
+# General
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+*.swp
+
+# Environment files
+.env
+.env.*
+
+# Claude
+.docker-claude/
+**/.claude/settings.local.json
+
+# IDE
+.vscode/
+
+# Java Keystores
+*.jks
