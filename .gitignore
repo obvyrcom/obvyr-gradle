@@ -21,7 +21,7 @@ Thumbs.db
 
 # Claude
 .docker-claude/
-**/.claude/settings.local.json
+.claude/
 
 # IDE
 .vscode/
