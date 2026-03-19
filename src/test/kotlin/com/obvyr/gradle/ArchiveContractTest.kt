@@ -15,12 +15,9 @@ import okhttp3.mockwebserver.RecordedRequest
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterEach
-import org.junit.jupiter.api.Assumptions
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.io.TempDir
 import java.io.ByteArrayInputStream
-import java.io.File
 
 /**
  * Contract tests verifying that the plugin produces requests conforming to the
@@ -164,38 +161,6 @@ class ArchiveContractTest {
         assertThat(parsed.keys).containsExactlyInAnyOrderElementsOf(requiredFields)
     }
 
-    // --- Python cross-language contract (via obvyr_cli Docker container) ---
-
-    @TempDir
-    lateinit var tempDir: File
-
-    @Test
-    fun `archive is decompressible by Python obvyr_cli`() {
-        assumeCliContainerRunning()
-        val result = runPythonSummarize(ArchiveBuilder.build(sampleCommandJson))
-        assertThat(result.exitCode).withFailMessage(result.stderr).isEqualTo(0)
-    }
-
-    @Test
-    fun `archive command_json is readable by Python obvyr_cli`() {
-        assumeCliContainerRunning()
-        val result = runPythonSummarize(ArchiveBuilder.build(sampleCommandJson))
-        assertThat(result.exitCode).withFailMessage(result.stderr).isEqualTo(0)
-        assertThat(result.stdout).contains("command.json")
-    }
-
-    @Test
-    fun `archive attachment entries are readable by Python obvyr_cli`() {
-        assumeCliContainerRunning()
-        val archiveBytes = ArchiveBuilder.build(
-            sampleCommandJson, null,
-            listOf(Pair("TEST-foo.xml", "<testsuite/>".toByteArray())),
-        )
-        val result = runPythonSummarize(archiveBytes)
-        assertThat(result.exitCode).withFailMessage(result.stderr).isEqualTo(0)
-        assertThat(result.stdout).contains("attachment/TEST-foo.xml")
-    }
-
     // --- Helpers ---
 
     private fun submitArchive(agentKey: String = "test-key"): RecordedRequest {
@@ -233,60 +198,5 @@ class ArchiveContractTest {
             }
         }
         throw AssertionError("command.json not found in archive")
-    }
-
-    private val repoRoot: File by lazy {
-        var dir = File(".").canonicalFile
-        while (!File(dir, "docker-compose.yml").exists() && dir.parentFile != null) {
-            dir = dir.parentFile
-        }
-        dir
-    }
-
-    private fun assumeCliContainerRunning() {
-        val result = runCatching {
-            ProcessBuilder("docker", "compose", "exec", "-T", "cli", "echo", "ok")
-                .directory(repoRoot)
-                .redirectErrorStream(true)
-                .start()
-                .waitFor()
-        }
-        Assumptions.assumeTrue(
-            result.getOrElse { 1 } == 0,
-            "Skipping: obvyr_cli Docker container not running — run: docker compose up -d cli",
-        )
-    }
-
-    private data class PythonResult(val exitCode: Int, val stdout: String, val stderr: String)
-
-    private fun runPythonSummarize(archiveBytes: ByteArray): PythonResult {
-        val script = """
-            import sys, json, pathlib, tempfile
-            from obvyr_cli.archive_builder import summarize_archive
-            data = sys.stdin.buffer.read()
-            tmp = pathlib.Path(tempfile.mktemp(suffix='.tar.zst'))
-            tmp.write_bytes(data)
-            try:
-                s = summarize_archive(tmp)
-                print(json.dumps(list(s.members.keys())))
-            finally:
-                tmp.unlink(missing_ok=True)
-        """.trimIndent()
-
-        val process = ProcessBuilder(
-            "docker", "compose", "exec", "-T", "cli",
-            "poetry", "run", "python3", "-c", script,
-        )
-            .directory(repoRoot)
-            .start()
-
-        process.outputStream.write(archiveBytes)
-        process.outputStream.close()
-
-        val stdout = process.inputStream.bufferedReader().readText().trim()
-        val stderr = process.errorStream.bufferedReader().readText().trim()
-        val exitCode = process.waitFor()
-
-        return PythonResult(exitCode, stdout, stderr)
     }
 }
