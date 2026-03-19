@@ -80,7 +80,7 @@ obvyr {
 | Property          | Type           | Default            | Env var                  | Description                                                                                                                                                                                                                                                                                              |
 | ----------------- | -------------- | ------------------ | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `agentKey`        | `String`       | —                  | `OBVYR_API_KEY`          | Authentication token for the Obvyr API. Required; plugin logs a warning and skips submission if absent.                                                                                                                                                                                                  |
-| `user`            | `String`       | system `user.name` | `OBVYR_USER`             | Username attached to each observation.                                                                                                                                                                                                                                                                   |
+| `user`            | `String`       | system `user.name` | `OBVYR_USER`             | Execution context identifier attached to each observation. Use a value that describes *what* is running the build, not *who* — e.g. `local-dev`, `github-ci`, `jenkins-prod`.                                                                                                                            |
 | `tags`            | `List<String>` | `[]`               | `OBVYR_TAGS`             | Labels applied to every observation from this project. Env var accepts a comma-separated list.                                                                                                                                                                                                           |
 | `timeout`         | `Double`       | `10.0`             | `OBVYR_TIMEOUT`          | HTTP call timeout in seconds.                                                                                                                                                                                                                                                                            |
 | `verifySsl`       | `Boolean`      | `true`             | `OBVYR_VERIFY_SSL`       | Set to `false` to disable TLS certificate verification (development only).                                                                                                                                                                                                                               |
@@ -93,11 +93,19 @@ For most projects, no DSL block is needed at all — configure the three environ
 
 ```bash
 export OBVYR_API_KEY="agt_your_token_here"
-export OBVYR_USER="alice"
+export OBVYR_USER="local-dev"
 export OBVYR_TAGS="local"
 ```
 
-Set these differently per environment (e.g. `OBVYR_TAGS=ci` and `OBVYR_USER=ci-runner` in your CI pipeline). All other settings use their defaults.
+Set these differently per environment — for example, in your CI pipeline:
+
+```bash
+export OBVYR_API_KEY="agt_your_token_here"
+export OBVYR_USER="github-ci"
+export OBVYR_TAGS="ci"
+```
+
+`OBVYR_USER` should identify the *execution context* (what is running the build), not an individual. All other settings use their defaults.
 
 ### Environment Variables
 
