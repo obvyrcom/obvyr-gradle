@@ -66,7 +66,7 @@ All settings can be provided through the DSL block, a corresponding environment 
 // build.gradle.kts
 obvyr {
     agentKey       = "agt_your_token_here"   // required; no default
-    user           = "alice"                 // default: system user.name
+    user           = "local-dev"             // default: system user.name
     tags           = listOf("ci", "unit")    // default: empty
     timeout        = 10.0                    // seconds; default shown
     verifySsl      = true                    // default shown
@@ -80,7 +80,7 @@ obvyr {
 | Property          | Type           | Default            | Env var                  | Description                                                                                                                                                                                                                                                                                              |
 | ----------------- | -------------- | ------------------ | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `agentKey`        | `String`       | —                  | `OBVYR_API_KEY`          | Authentication token for the Obvyr API. Required; plugin logs a warning and skips submission if absent.                                                                                                                                                                                                  |
-| `user`            | `String`       | system `user.name` | `OBVYR_USER`             | Execution context identifier attached to each observation. Use a value that describes *what* is running the build, not *who* — e.g. `local-dev`, `github-ci`, `jenkins-prod`.                                                                                                                            |
+| `user`            | `String`       | system `user.name` | `OBVYR_USER`             | Execution context identifier attached to each observation. Use a value that describes _what_ is running the build, not _who_ — e.g. `local-dev`, `github-ci`, `jenkins-prod`.                                                                                                                            |
 | `tags`            | `List<String>` | `[]`               | `OBVYR_TAGS`             | Labels applied to every observation from this project. Env var accepts a comma-separated list.                                                                                                                                                                                                           |
 | `timeout`         | `Double`       | `10.0`             | `OBVYR_TIMEOUT`          | HTTP call timeout in seconds.                                                                                                                                                                                                                                                                            |
 | `verifySsl`       | `Boolean`      | `true`             | `OBVYR_VERIFY_SSL`       | Set to `false` to disable TLS certificate verification (development only).                                                                                                                                                                                                                               |
@@ -105,7 +105,7 @@ export OBVYR_USER="github-ci"
 export OBVYR_TAGS="ci"
 ```
 
-`OBVYR_USER` should identify the *execution context* (what is running the build), not an individual. All other settings use their defaults.
+`OBVYR_USER` should identify the _execution context_ (what is running the build), not an individual. All other settings use their defaults.
 
 ### Environment Variables
 
