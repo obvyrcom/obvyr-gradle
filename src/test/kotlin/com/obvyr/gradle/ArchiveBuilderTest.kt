@@ -99,6 +99,39 @@ class ArchiveBuilderTest {
         return entries
     }
 
+    // --- preview ---
+
+    @Test
+    fun `preview pretty-prints command_json`() {
+        val preview = ArchiveBuilder.preview(sampleCommandJson)
+
+        assertThat(preview).startsWith("--- command.json ---\n{")
+        assertThat(preview).contains("\"return_code\": 42")
+        assertThat(preview).contains("\"PATH\": \"/usr/bin\"")
+    }
+
+    @Test
+    fun `preview omits output section when there is no output`() {
+        assertThat(ArchiveBuilder.preview(sampleCommandJson)).doesNotContain("output.txt")
+    }
+
+    @Test
+    fun `preview shows output in full`() {
+        assertThat(ArchiveBuilder.preview(sampleCommandJson, outputText = "line one\nline two"))
+            .contains("--- output.txt ---\nline one\nline two")
+    }
+
+    @Test
+    fun `preview lists attachments by name and size only`() {
+        val preview = ArchiveBuilder.preview(
+            sampleCommandJson,
+            attachments = listOf("report.xml" to "<secret/>".toByteArray()),
+        )
+
+        assertThat(preview).contains("--- attachment/report.xml (9 bytes, content not shown) ---")
+        assertThat(preview).doesNotContain("<secret/>")
+    }
+
     private fun readTarEntry(archiveBytes: ByteArray, entryName: String): String {
         ZstdInputStream(ByteArrayInputStream(archiveBytes)).use { zstd ->
             TarArchiveInputStream(zstd).use { tar ->

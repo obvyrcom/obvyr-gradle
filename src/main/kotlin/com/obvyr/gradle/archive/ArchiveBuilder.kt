@@ -10,6 +10,7 @@ import java.io.ByteArrayOutputStream
 
 object ArchiveBuilder {
     private val json = Json { encodeDefaults = true }
+    private val prettyJson = Json { encodeDefaults = true; prettyPrint = true }
 
     fun build(
         commandJson: CommandJson,
@@ -18,6 +19,26 @@ object ArchiveBuilder {
     ): ByteArray {
         val tarBytes = buildTar(commandJson, outputText, attachments)
         return compressWithZstd(tarBytes)
+    }
+
+    /**
+     * Renders what [build] would upload as text, for a dry run. command.json is
+     * pretty-printed and output.txt is shown in full. Attachments are listed with
+     * their sizes only.
+     */
+    fun preview(
+        commandJson: CommandJson,
+        outputText: String? = null,
+        attachments: List<Pair<String, ByteArray>> = emptyList(),
+    ): String {
+        val sections = mutableListOf("--- command.json ---\n${prettyJson.encodeToString(commandJson)}")
+        if (outputText != null) {
+            sections.add("--- output.txt ---\n$outputText")
+        }
+        for ((name, data) in attachments) {
+            sections.add("--- attachment/$name (${data.size} bytes, content not shown) ---")
+        }
+        return sections.joinToString("\n\n")
     }
 
     private fun buildTar(
