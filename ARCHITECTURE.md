@@ -32,9 +32,11 @@ Gradle test run
             │
             ├── Resolve config (DSL > env var > default)
             ├── Build CommandJson (command, user, return_code, execution_time_ms, executed, env, tags)
+            │       env = Redaction.filterEnvironment (allow-list only); command and output are redacted
             ├── Gather attachments
             │       JUnit XML from task results dir  (newest-first, 5 MB / file, 10 MB total)
             │       Configured attachmentPaths       (same limits)
+            ├── dryRun?  →  ArchiveBuilder.preview() logged, return (no network call)
             ├── ArchiveBuilder.build()  →  tar.zst ByteArray
             └── ObvyrApiClient.submit()  →  POST /collect  (multipart, Authorization: Bearer)
 ```
@@ -47,7 +49,7 @@ Registers the `ObvyrExtension` DSL block and, once the `java` plugin is present,
 
 ### ObvyrExtension
 
-Gradle `interface` with eight `Property<T>` / `ListProperty<T>` fields. Convention defaults are set in `ObvyrPlugin.apply()`:
+Gradle `interface` with twelve `Property<T>` / `ListProperty<T>` fields. Convention defaults are set in `ObvyrPlugin.apply()`:
 
 | Property | Default | Env var |
 |---|---|---|
@@ -59,6 +61,12 @@ Gradle `interface` with eight `Property<T>` / `ListProperty<T>` fields. Conventi
 | `verifySsl` | `true` | `OBVYR_VERIFY_SSL` |
 | `attachmentPaths` | `[]` | `OBVYR_ATTACHMENT_PATHS` (comma-separated) |
 | `enabled` | `true` | — |
+| `envMode` | `"allowlist"` (`"none"` sends no environment) | `OBVYR_ENV_MODE` |
+| `envInclude` | `[]` | `OBVYR_ENV_INCLUDE` (comma-separated) |
+| `redactPatterns` | `[]` | `OBVYR_REDACT_PATTERNS` (comma-separated) |
+| `dryRun` | `false` | `OBVYR_DRY_RUN` |
+
+These four have no `convention` in `ObvyrPlugin.apply()` — a convention makes `isPresent` true and would stop the env var being consulted. Defaults live in `ObvyrSubmitAction`.
 
 ### ObvyrTestCollector
 
@@ -74,9 +82,13 @@ Attachment gathering has two phases:
 
 Both phases share the 5 MB per-file and 10 MB total limits.
 
+### Redaction
+
+Pure functions that control what is uploaded, mirroring `obvyr_cli`'s `redaction.py` so both clients send the same data. `filterEnvironment` keeps only `ENV_ALLOWLIST` (exact names, no prefix matching) plus `envInclude`, always drops `OBVYR_*`, redacts values whose name looks secret, and returns nothing when the mode is `none`. `redactText` / `redactCommand` apply the built-in patterns (AWS key IDs, bearer tokens, `name=value` assignments, secret-looking flags) plus `redactPatterns`. Attachments are not redacted. Keep the allow-list in sync with the CLI.
+
 ### ArchiveBuilder
 
-Writes a tar stream into a `ByteArrayOutputStream`, then wraps it with `ZstdOutputStream` (Commons Compress + zstd-jni). Entries: `command.json` (always), `output.txt` (when non-blank), `attachment/<name>` (for each pair). The tar is built fully in memory before zstd compression starts — this matches the approach used by `obvyr_cli`.
+Writes a tar stream into a `ByteArrayOutputStream`, then wraps it with `ZstdOutputStream` (Commons Compress + zstd-jni). Entries: `command.json` (always), `output.txt` (when non-blank), `attachment/<name>` (for each pair). `preview()` renders the same inputs as text for dry runs (attachments listed by name and size only). The tar is built fully in memory before zstd compression starts — this matches the approach used by `obvyr_cli`.
 
 ### ObvyrApiClient
 

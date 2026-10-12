@@ -4,7 +4,7 @@ A Gradle plugin that hooks into test task execution to collect and submit test m
 
 ## Overview
 
-The plugin automatically wraps every `Test` task in your project. After each test run it captures execution time, return code, console output, JUnit XML reports, and any configured attachments, then submits them as a compressed archive to the Obvyr API.
+The plugin automatically wraps every `Test` task in your project. After each test run it captures execution time, return code, console output, JUnit XML reports, and any configured attachments, then submits them as a compressed archive to the Obvyr API. Only a documented allow-list of environment variables is sent, and secrets are redacted before upload (see [What Is Sent](#what-is-sent)).
 
 ### Design Philosophy
 
@@ -72,6 +72,10 @@ obvyr {
     verifySsl      = true                    // default shown
     attachmentPaths = listOf("build/reports/coverage/coverage.xml")
     enabled        = true                    // default shown
+    envMode        = "allowlist"             // or "none"; default shown
+    envInclude     = listOf("BUILD_FLAVOUR") // extra variables to send; default: empty
+    redactPatterns = listOf("ACME-\\d+")      // extra regexes to redact; default: empty
+    dryRun         = false                   // default shown
 }
 ```
 
@@ -86,6 +90,46 @@ obvyr {
 | `verifySsl`       | `Boolean`      | `true`             | `OBVYR_VERIFY_SSL`       | Set to `false` to disable TLS certificate verification (development only).                                                                                                                                                                                                                               |
 | `attachmentPaths` | `List<String>` | `[]`               | `OBVYR_ATTACHMENT_PATHS` | Additional files to include in the archive. Supports glob patterns (`*.xml`, `reports/**/*.json`). Relative paths are resolved against the project directory. Only text-based file types are included (xml, json, yaml, yml, csv, txt, html, htm, log). Env var accepts a comma-separated list of paths. |
 | `enabled`         | `Boolean`      | `true`             | —                        | Set to `false` to disable the plugin without removing it.                                                                                                                                                                                                                                                |
+| `envMode`         | `String`       | `allowlist`        | `OBVYR_ENV_MODE`         | `allowlist` sends only the CI variables listed in [What Is Sent](#what-is-sent) plus `envInclude`. `none` sends no environment at all. Any other value is treated as `none` and logs a warning.                                                                                                          |
+| `envInclude`      | `List<String>` | `[]`               | `OBVYR_ENV_INCLUDE`      | Names of extra environment variables to send. `OBVYR_*` variables are never sent, even if named here. Env var accepts a comma-separated list.                                                                                                                                                            |
+| `redactPatterns`  | `List<String>` | `[]`               | `OBVYR_REDACT_PATTERNS`  | Extra regular expressions to redact from environment values, command arguments and output, in addition to the built-in patterns. Env var accepts a comma-separated list, so a pattern cannot contain a comma; write `[,]` instead.                                                                       |
+| `dryRun`          | `Boolean`      | `false`            | `OBVYR_DRY_RUN`          | Print exactly what would be sent and make no network call. No agent key is needed.                                                                                                                                                                                                                       |
+
+### What Is Sent
+
+Each `test` task submits one archive containing:
+
+- **`command.json`**: the command (`gradle <task path>`), the `user`, return code, execution time, timestamp, `tags`, and the environment described below.
+- **`output.txt`**: the console output of the test task, with secrets redacted.
+- **Attachments**: the JUnit XML reports and any files matched by `attachmentPaths`.
+
+**Environment variables.** By default only these CI identifiers are sent. Every other variable is omitted:
+
+`CI`, `CONTINUOUS_INTEGRATION`, `GITHUB_ACTIONS`, `GITHUB_RUN_ID`, `GITHUB_RUN_NUMBER`, `GITHUB_WORKFLOW`, `GITHUB_REPOSITORY`, `GITHUB_SHA`, `GITHUB_REF_NAME`, `GITLAB_CI`, `CI_PIPELINE_ID`, `CI_JOB_ID`, `CI_COMMIT_SHA`, `CI_COMMIT_REF_NAME`, `JENKINS_URL`, `BUILD_NUMBER`, `BUILDKITE`, `BUILDKITE_BUILD_NUMBER`, `CIRCLECI`, `CIRCLE_BUILD_NUM`, `CIRCLE_SHA1`
+
+Variables beginning with `OBVYR_` (including your agent key) are never sent. Add further variables with `envInclude`, or set `envMode = "none"` to send no environment at all.
+
+**Redaction.** Before upload, matches are replaced with `[REDACTED]` in environment values, command arguments and output. The built-in patterns cover:
+
+- Variables and flags whose name contains `token`, `key`, `password`, `passwd`, `secret` or `credential` (the value is redacted)
+- Assignments such as `password=value` or `secret: value`
+- AWS access key IDs (`AKIA…`, `ASIA…`)
+- Bearer tokens
+
+Redaction is best-effort pattern matching, not a guarantee. An invalid `redactPatterns` entry logs a warning and nothing is submitted.
+
+**What is not changed:**
+
+- Gradle's own console output is displayed unredacted. Only the uploaded copy is redacted.
+- Attachments, including JUnit XML reports (which contain captured test stdout and stderr), are uploaded as they are, without redaction. Only attach files that are safe to share.
+
+**Dry run.** Set `dryRun = true` (or `OBVYR_DRY_RUN=true`) to run the tests as normal and print the exact `command.json` and `output.txt` that would be uploaded, with attachments listed by name and size. Nothing is sent.
+
+```bash
+OBVYR_DRY_RUN=true ./gradlew test
+```
+
+**Upgrading.** Earlier versions sent the entire environment. If you relied on specific variables appearing in Obvyr, add them to `envInclude`.
 
 ### Recommended Configuration
 
@@ -118,6 +162,10 @@ export OBVYR_TAGS="ci,github-actions"
 export OBVYR_TIMEOUT="30.0"
 export OBVYR_VERIFY_SSL="true"
 export OBVYR_ATTACHMENT_PATHS="build/reports/coverage/coverage.xml,build/reports/lint/lint.html"
+export OBVYR_ENV_MODE="allowlist"
+export OBVYR_ENV_INCLUDE="BUILD_FLAVOUR,REGION"
+export OBVYR_REDACT_PATTERNS="ACME-\\d+"
+export OBVYR_DRY_RUN="false"
 ```
 
 ## Integration Examples
