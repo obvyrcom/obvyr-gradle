@@ -41,6 +41,10 @@ class ObvyrPluginTest {
         assertThat(extension.verifySsl).isNotNull()
         assertThat(extension.attachmentPaths).isNotNull()
         assertThat(extension.enabled).isNotNull()
+        assertThat(extension.envMode).isNotNull()
+        assertThat(extension.envInclude).isNotNull()
+        assertThat(extension.redactPatterns).isNotNull()
+        assertThat(extension.dryRun).isNotNull()
     }
 
     @Test

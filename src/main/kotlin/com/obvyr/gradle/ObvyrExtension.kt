@@ -12,4 +12,8 @@ interface ObvyrExtension {
     val verifySsl: Property<Boolean>
     val attachmentPaths: ListProperty<String>
     val enabled: Property<Boolean>
+    val envMode: Property<String>
+    val envInclude: ListProperty<String>
+    val redactPatterns: ListProperty<String>
+    val dryRun: Property<Boolean>
 }

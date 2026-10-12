@@ -3,6 +3,7 @@ package com.obvyr.gradle
 import com.obvyr.gradle.archive.ArchiveBuilder
 import com.obvyr.gradle.http.ObvyrApiClient
 import com.obvyr.gradle.model.CommandJson
+import com.obvyr.gradle.redaction.Redaction
 import org.gradle.api.Task
 import org.gradle.api.logging.Logger
 import org.gradle.api.provider.ListProperty
@@ -29,12 +30,14 @@ class ObvyrSubmitAction(
     private val projectDir: File,
     private val logger: Logger,
     @JvmField internal val envLookup: (String) -> String? = System::getenv,
+    private val environment: Map<String, String> = System.getenv(),
 ) {
     fun execute(task: Task) {
         if (!extension.enabled.getOrElse(true)) return
 
-        val agentKey = resolve(extension.agentKey, "OBVYR_API_KEY", null)
-        if (agentKey.isNullOrBlank()) {
+        val dryRun = resolveBoolean(extension.dryRun, "OBVYR_DRY_RUN", false)
+        val agentKey = resolve(extension.agentKey, "OBVYR_API_KEY", "")
+        if (!dryRun && agentKey.isBlank()) {
             logger.warn("[Obvyr] No agent key configured. Set obvyr { agentKey = \"...\" } or OBVYR_API_KEY env var.")
             return
         }
@@ -45,19 +48,28 @@ class ObvyrSubmitAction(
             val timeout = resolveDouble(extension.timeout, "OBVYR_TIMEOUT", 10.0)
             val verifySsl = resolveBoolean(extension.verifySsl, "OBVYR_VERIFY_SSL", true)
             val tags = resolveList(extension.tags, "OBVYR_TAGS")
+            val envMode = resolveEnvMode()
+            val envInclude = resolveList(extension.envInclude, "OBVYR_ENV_INCLUDE")
+            val redactPatterns = resolveList(extension.redactPatterns, "OBVYR_REDACT_PATTERNS")
 
             val commandJson = CommandJson(
-                command = listOf("gradle", task.path),
+                command = Redaction.redactCommand(listOf("gradle", task.path), redactPatterns),
                 user = user,
                 returnCode = collector.returnCode,
                 executionTimeMs = collector.executionTimeMs,
                 executed = Instant.now().toString(),
-                env = System.getenv(),
+                env = Redaction.filterEnvironment(environment, envMode, envInclude, redactPatterns),
                 tags = tags,
             )
 
-            val outputText = collector.output.ifBlank { null }
+            val outputText = collector.output.ifBlank { null }?.let { Redaction.redactText(it, redactPatterns) }
             val attachments = gatherAttachments(resolveList(extension.attachmentPaths, "OBVYR_ATTACHMENT_PATHS"))
+
+            if (dryRun) {
+                logger.lifecycle("[Obvyr] Dry run: nothing was sent. This is what would be sent:")
+                logger.lifecycle(ArchiveBuilder.preview(commandJson, outputText, attachments))
+                return
+            }
 
             val archiveData = ArchiveBuilder.build(commandJson, outputText, attachments)
             val client = ObvyrApiClient(agentKey, apiUrl, timeout, verifySsl)
@@ -123,6 +135,14 @@ class ObvyrSubmitAction(
             .toList()
     }
 
+    /** Unknown modes fall back to sending no environment, the safe direction to fail. */
+    private fun resolveEnvMode(): String {
+        val mode = resolve(extension.envMode, "OBVYR_ENV_MODE", Redaction.ENV_MODE_ALLOWLIST).lowercase()
+        if (mode == Redaction.ENV_MODE_ALLOWLIST || mode == Redaction.ENV_MODE_NONE) return mode
+        logger.warn("[Obvyr] Unknown envMode '$mode'. Expected 'allowlist' or 'none'. Sending no environment.")
+        return Redaction.ENV_MODE_NONE
+    }
+
     private fun resolveDouble(property: Property<Double>, envVar: String, default: Double): Double {
         if (property.isPresent) return property.get()
         val envValue = envLookup(envVar)
@@ -144,12 +164,7 @@ class ObvyrSubmitAction(
         return emptyList()
     }
 
-    @JvmName("resolveNonNull")
     private fun resolve(property: Property<String>, envVar: String, default: String): String =
-        resolveOrNull(property, envVar) ?: default
-
-    @JvmName("resolveNullable")
-    private fun resolve(property: Property<String>, envVar: String, default: String?): String? =
         resolveOrNull(property, envVar) ?: default
 
     private fun resolveOrNull(property: Property<String>, envVar: String): String? {

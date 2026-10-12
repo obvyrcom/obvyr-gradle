@@ -398,6 +398,10 @@ class ObvyrSubmitActionTest {
             every { verifySsl } returns boolProp(true)
             every { tags } returns listProp(emptyList<String>())
             every { attachmentPaths } returns listProp(emptyList<String>())
+            every { envMode } returns absentStrProp()
+            every { envInclude } returns absentListProp()
+            every { redactPatterns } returns absentListProp()
+            every { dryRun } returns absentBoolProp()
         }
         val logger = mockk<Logger>(relaxed = true)
 
@@ -434,6 +438,10 @@ class ObvyrSubmitActionTest {
             every { verifySsl } returns boolProp(true)
             every { tags } returns absentListProp()
             every { attachmentPaths } returns listProp(emptyList<String>())
+            every { envMode } returns absentStrProp()
+            every { envInclude } returns absentListProp()
+            every { redactPatterns } returns absentListProp()
+            every { dryRun } returns absentBoolProp()
         }
         val logger = mockk<Logger>(relaxed = true)
         val envLookup: (String) -> String? = { key -> if (key == "OBVYR_TAGS") "ci,unit" else null }
@@ -457,6 +465,10 @@ class ObvyrSubmitActionTest {
             every { verifySsl } returns boolProp(true)
             every { tags } returns listProp(emptyList<String>())
             every { attachmentPaths } returns listProp(emptyList<String>())
+            every { envMode } returns absentStrProp()
+            every { envInclude } returns absentListProp()
+            every { redactPatterns } returns absentListProp()
+            every { dryRun } returns absentBoolProp()
         }
         val logger = mockk<Logger>(relaxed = true)
         val envLookup: (String) -> String? = { key -> if (key == "OBVYR_TIMEOUT") "30.0" else null }
@@ -478,6 +490,10 @@ class ObvyrSubmitActionTest {
             every { verifySsl } returns boolProp(true)
             every { tags } returns listProp(emptyList<String>())
             every { attachmentPaths } returns listProp(emptyList<String>())
+            every { envMode } returns absentStrProp()
+            every { envInclude } returns absentListProp()
+            every { redactPatterns } returns absentListProp()
+            every { dryRun } returns absentBoolProp()
         }
         val logger = mockk<Logger>(relaxed = true)
         val envLookup: (String) -> String? = { key -> if (key == "OBVYR_TIMEOUT") "not-a-number" else null }
@@ -499,6 +515,10 @@ class ObvyrSubmitActionTest {
             every { verifySsl } returns absentBoolProp()
             every { tags } returns listProp(emptyList<String>())
             every { attachmentPaths } returns listProp(emptyList<String>())
+            every { envMode } returns absentStrProp()
+            every { envInclude } returns absentListProp()
+            every { redactPatterns } returns absentListProp()
+            every { dryRun } returns absentBoolProp()
         }
         val logger = mockk<Logger>(relaxed = true)
         val envLookup: (String) -> String? = { key -> if (key == "OBVYR_VERIFY_SSL") "true" else null }
@@ -521,6 +541,10 @@ class ObvyrSubmitActionTest {
             every { verifySsl } returns boolProp(true)
             every { tags } returns listProp(emptyList<String>())
             every { attachmentPaths } returns absentListProp()
+            every { envMode } returns absentStrProp()
+            every { envInclude } returns absentListProp()
+            every { redactPatterns } returns absentListProp()
+            every { dryRun } returns absentBoolProp()
         }
         val logger = mockk<Logger>(relaxed = true)
         val envLookup: (String) -> String? = { key ->
@@ -544,6 +568,10 @@ class ObvyrSubmitActionTest {
             every { verifySsl } returns absentBoolProp()
             every { tags } returns absentListProp()
             every { attachmentPaths } returns absentListProp()
+            every { envMode } returns absentStrProp()
+            every { envInclude } returns absentListProp()
+            every { redactPatterns } returns absentListProp()
+            every { dryRun } returns absentBoolProp()
         }
         val logger = mockk<Logger>(relaxed = true)
         val envLookup: (String) -> String? = { null }
@@ -570,6 +598,250 @@ class ObvyrSubmitActionTest {
         customServer.shutdown()
     }
 
+    // --- environment capture ---
+
+    private val sampleEnvironment = mapOf(
+        "CI" to "true",
+        "GITHUB_RUN_ID" to "42",
+        "OBVYR_API_KEY" to "agt_super_secret",
+        "AWS_SECRET_ACCESS_KEY" to "wJalrXUtnFEMI",
+        "HOME" to "/home/runner",
+        "BUILD_FLAVOUR" to "release",
+    )
+
+    private fun submitAndReadCommandJson(
+        extension: ObvyrExtension,
+        collector: ObvyrTestCollector = mockCollector(),
+        envLookup: (String) -> String? = { null },
+        logger: Logger = mockk(relaxed = true),
+    ): String {
+        server.enqueue(MockResponse().setResponseCode(200))
+        ObvyrSubmitAction(extension, collector, testResultsDir, projectDir, logger, envLookup, sampleEnvironment)
+            .execute(mockTask())
+        return extractCommandJsonContent(server.takeRequest())
+    }
+
+    @Test
+    fun `execute sends only allow-listed environment variables by default`() {
+        val commandJson = submitAndReadCommandJson(mockExtension())
+
+        assertThat(commandJson).contains("\"CI\":\"true\"")
+        assertThat(commandJson).contains("\"GITHUB_RUN_ID\":\"42\"")
+        assertThat(commandJson).doesNotContain("HOME")
+        assertThat(commandJson).doesNotContain("BUILD_FLAVOUR")
+        assertThat(commandJson).doesNotContain("AWS_SECRET_ACCESS_KEY")
+    }
+
+    @Test
+    fun `execute never sends OBVYR_ variables including the API key`() {
+        val commandJson = submitAndReadCommandJson(mockExtension())
+
+        assertThat(commandJson).doesNotContain("OBVYR_API_KEY")
+        assertThat(commandJson).doesNotContain("agt_super_secret")
+    }
+
+    @Test
+    fun `execute never sends OBVYR_ variables even when named in envInclude`() {
+        val extension = mockExtension(envInclude = listOf("OBVYR_API_KEY"))
+
+        val commandJson = submitAndReadCommandJson(extension)
+
+        assertThat(commandJson).doesNotContain("OBVYR_API_KEY")
+        assertThat(commandJson).doesNotContain("agt_super_secret")
+    }
+
+    @Test
+    fun `execute sends extra variables named in envInclude`() {
+        val extension = mockExtension(envInclude = listOf("BUILD_FLAVOUR"))
+
+        val commandJson = submitAndReadCommandJson(extension)
+
+        assertThat(commandJson).contains("\"BUILD_FLAVOUR\":\"release\"")
+        assertThat(commandJson).doesNotContain("HOME")
+    }
+
+    @Test
+    fun `execute redacts the value of an included variable whose name looks secret`() {
+        val extension = mockExtension(envInclude = listOf("AWS_SECRET_ACCESS_KEY"))
+
+        val commandJson = submitAndReadCommandJson(extension)
+
+        assertThat(commandJson).contains("\"AWS_SECRET_ACCESS_KEY\":\"[REDACTED]\"")
+        assertThat(commandJson).doesNotContain("wJalrXUtnFEMI")
+    }
+
+    @Test
+    fun `execute uses OBVYR_ENV_INCLUDE env var when envInclude property is absent`() {
+        val envLookup: (String) -> String? = { key -> if (key == "OBVYR_ENV_INCLUDE") "BUILD_FLAVOUR, HOME" else null }
+
+        val commandJson = submitAndReadCommandJson(mockExtension(), envLookup = envLookup)
+
+        assertThat(commandJson).contains("\"BUILD_FLAVOUR\":\"release\"")
+        assertThat(commandJson).contains("\"HOME\":\"/home/runner\"")
+    }
+
+    @Test
+    fun `execute sends no environment when envMode is none`() {
+        val commandJson = submitAndReadCommandJson(mockExtension(envMode = "none"))
+
+        assertThat(commandJson).contains("\"env\":{}")
+    }
+
+    @Test
+    fun `execute sends no environment when envMode is none even if envInclude is set`() {
+        val extension = mockExtension(envMode = "none", envInclude = listOf("BUILD_FLAVOUR"))
+
+        val commandJson = submitAndReadCommandJson(extension)
+
+        assertThat(commandJson).contains("\"env\":{}")
+    }
+
+    @Test
+    fun `execute uses OBVYR_ENV_MODE env var when envMode property is absent`() {
+        val envLookup: (String) -> String? = { key -> if (key == "OBVYR_ENV_MODE") "NONE" else null }
+
+        val commandJson = submitAndReadCommandJson(mockExtension(), envLookup = envLookup)
+
+        assertThat(commandJson).contains("\"env\":{}")
+    }
+
+    @Test
+    fun `execute sends no environment and warns when envMode is unknown`() {
+        val logger = mockk<Logger>(relaxed = true)
+
+        val commandJson = submitAndReadCommandJson(mockExtension(envMode = "everything"), logger = logger)
+
+        assertThat(commandJson).contains("\"env\":{}")
+        verify { logger.warn(match { it.contains("Unknown envMode 'everything'") }) }
+    }
+
+    // --- redaction ---
+
+    @Test
+    fun `execute redacts secrets in output before upload`() {
+        server.enqueue(MockResponse().setResponseCode(200))
+        val collector = mockCollector(output = "connecting with password=hunter2 and Bearer abc.def.ghi")
+
+        ObvyrSubmitAction(mockExtension(), collector, testResultsDir, projectDir, mockk(relaxed = true), { null })
+            .execute(mockTask())
+
+        val output = extractTarEntryContent(server.takeRequest(), "output.txt")
+        assertThat(output).isEqualTo("connecting with password=[REDACTED] and [REDACTED]")
+    }
+
+    @Test
+    fun `execute redacts output with configured redactPatterns`() {
+        server.enqueue(MockResponse().setResponseCode(200))
+        val extension = mockExtension(redactPatterns = listOf("ACME-\\d+"))
+
+        ObvyrSubmitAction(extension, mockCollector(output = "ticket ACME-1234 failed"), testResultsDir, projectDir, mockk(relaxed = true), { null })
+            .execute(mockTask())
+
+        assertThat(extractTarEntryContent(server.takeRequest(), "output.txt")).isEqualTo("ticket [REDACTED] failed")
+    }
+
+    @Test
+    fun `execute uses OBVYR_REDACT_PATTERNS env var when redactPatterns property is absent`() {
+        server.enqueue(MockResponse().setResponseCode(200))
+        val envLookup: (String) -> String? = { key -> if (key == "OBVYR_REDACT_PATTERNS") "ACME-\\d+" else null }
+
+        ObvyrSubmitAction(mockExtension(), mockCollector(output = "ticket ACME-1234 failed"), testResultsDir, projectDir, mockk(relaxed = true), envLookup)
+            .execute(mockTask())
+
+        assertThat(extractTarEntryContent(server.takeRequest(), "output.txt")).isEqualTo("ticket [REDACTED] failed")
+    }
+
+    @Test
+    fun `execute does not submit and warns when a redact pattern is not a valid regex`() {
+        val logger = mockk<Logger>(relaxed = true)
+        val extension = mockExtension(redactPatterns = listOf("("))
+
+        ObvyrSubmitAction(extension, mockCollector(output = "anything"), testResultsDir, projectDir, logger, { null })
+            .execute(mockTask())
+
+        assertThat(server.requestCount).isEqualTo(0)
+        verify { logger.warn(match { it.contains("[Obvyr] Error submitting test data") }) }
+    }
+
+    // --- dry run ---
+
+    private fun captureLifecycle(logger: Logger): List<String> {
+        val messages = mutableListOf<String>()
+        every { logger.lifecycle(capture(messages)) } returns Unit
+        return messages
+    }
+
+    @Test
+    fun `execute with dryRun makes no network call and prints the payload`() {
+        val logger = mockk<Logger>(relaxed = true)
+        val messages = captureLifecycle(logger)
+        val extension = mockExtension(dryRun = true, envInclude = listOf("BUILD_FLAVOUR"))
+        val collector = mockCollector(output = "token=abc123 done")
+
+        ObvyrSubmitAction(extension, collector, testResultsDir, projectDir, logger, { null }, sampleEnvironment)
+            .execute(mockTask())
+
+        assertThat(server.requestCount).isEqualTo(0)
+        val printed = messages.joinToString("\n")
+        assertThat(printed).contains("--- command.json ---")
+        assertThat(printed).contains("\"BUILD_FLAVOUR\": \"release\"")
+        assertThat(printed).contains("--- output.txt ---\ntoken=[REDACTED] done")
+        assertThat(printed).doesNotContain("agt_super_secret")
+        assertThat(printed).doesNotContain("abc123")
+        verify(exactly = 0) { logger.warn(any<String>()) }
+    }
+
+    @Test
+    fun `execute with dryRun does not require an agent key`() {
+        val logger = mockk<Logger>(relaxed = true)
+        val messages = captureLifecycle(logger)
+        val extension = mockExtension(agentKey = null, dryRun = true)
+
+        ObvyrSubmitAction(extension, mockCollector(), testResultsDir, projectDir, logger, { null }, sampleEnvironment)
+            .execute(mockTask())
+
+        assertThat(messages.joinToString("\n")).contains("--- command.json ---")
+        verify(exactly = 0) { logger.warn(any<String>()) }
+    }
+
+    @Test
+    fun `execute uses OBVYR_DRY_RUN env var when dryRun property is absent`() {
+        val logger = mockk<Logger>(relaxed = true)
+        val messages = captureLifecycle(logger)
+        val envLookup: (String) -> String? = { key -> if (key == "OBVYR_DRY_RUN") "true" else null }
+
+        ObvyrSubmitAction(mockExtension(), mockCollector(), testResultsDir, projectDir, logger, envLookup, sampleEnvironment)
+            .execute(mockTask())
+
+        assertThat(server.requestCount).isEqualTo(0)
+        assertThat(messages.joinToString("\n")).contains("--- command.json ---")
+    }
+
+    @Test
+    fun `execute with dryRun false still submits`() {
+        server.enqueue(MockResponse().setResponseCode(200))
+
+        ObvyrSubmitAction(mockExtension(dryRun = false), mockCollector(), testResultsDir, projectDir, mockk(relaxed = true), { null })
+            .execute(mockTask())
+
+        assertThat(server.requestCount).isEqualTo(1)
+    }
+
+    @Test
+    fun `execute with dryRun lists attachments by name and size without their content`() {
+        File(testResultsDir, "TEST-sample.xml").writeText("<testsuite name=\"secret-content\"/>")
+        val logger = mockk<Logger>(relaxed = true)
+        val messages = captureLifecycle(logger)
+
+        ObvyrSubmitAction(mockExtension(dryRun = true), mockCollector(), testResultsDir, projectDir, logger, { null })
+            .execute(mockTask())
+
+        val printed = messages.joinToString("\n")
+        assertThat(printed).contains("--- attachment/TEST-sample.xml (")
+        assertThat(printed).contains("content not shown")
+        assertThat(printed).doesNotContain("secret-content")
+    }
+
     // --- Helpers ---
 
     private fun mockExtension(
@@ -581,6 +853,10 @@ class ObvyrSubmitActionTest {
         verifySsl: Boolean = true,
         tags: List<String> = emptyList(),
         attachmentPaths: List<String> = emptyList(),
+        envMode: String? = null,
+        envInclude: List<String>? = null,
+        redactPatterns: List<String>? = null,
+        dryRun: Boolean? = null,
     ): ObvyrExtension = mockk {
         every { this@mockk.enabled } returns boolProp(enabledVal)
         every { this@mockk.agentKey } returns if (agentKey != null) strProp(agentKey) else absentStrProp()
@@ -590,6 +866,11 @@ class ObvyrSubmitActionTest {
         every { this@mockk.verifySsl } returns boolProp(verifySsl)
         every { this@mockk.tags } returns listProp(tags)
         every { this@mockk.attachmentPaths } returns listProp(attachmentPaths)
+        every { this@mockk.envMode } returns if (envMode != null) strProp(envMode) else absentStrProp()
+        every { this@mockk.envInclude } returns if (envInclude != null) listProp(envInclude) else absentListProp()
+        every { this@mockk.redactPatterns } returns
+            if (redactPatterns != null) listProp(redactPatterns) else absentListProp()
+        every { this@mockk.dryRun } returns if (dryRun != null) boolProp(dryRun) else absentBoolProp()
     }
 
     private fun mockCollector(
@@ -689,16 +970,20 @@ class ObvyrSubmitActionTest {
         }
 
     /** Reads and returns the content of command.json from the archive in the request. */
-    private fun extractCommandJsonContent(request: RecordedRequest): String {
+    private fun extractCommandJsonContent(request: RecordedRequest): String =
+        extractTarEntryContent(request, "command.json")
+
+    /** Reads and returns the content of the named entry from the archive in the request. */
+    private fun extractTarEntryContent(request: RecordedRequest, name: String): String {
         ZstdInputStream(ByteArrayInputStream(extractArchiveBytes(request))).use { zstd ->
             TarArchiveInputStream(zstd).use { tar ->
                 var entry = tar.nextEntry
                 while (entry != null) {
-                    if (entry.name == "command.json") return tar.bufferedReader().readText()
+                    if (entry.name == name) return tar.bufferedReader().readText()
                     entry = tar.nextEntry
                 }
             }
         }
-        throw AssertionError("command.json not found in archive")
+        throw AssertionError("$name not found in archive")
     }
 }
